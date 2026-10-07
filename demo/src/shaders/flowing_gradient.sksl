@@ -1,0 +1,116 @@
+// FlowingGradient, ported from Shader Effects Inc. (MIT,
+// github.com/shader-effects-inc/shaders, packages/core/src/shaders/FlowingGradient).
+// Same field: noise-driven spin, sine shear, two chained domain-warp levels,
+// a four-color quad blend in OKLab with fold highlights. SkSL has no integer
+// bit ops, so the Perlin lattice hash is a float hash instead of MaterialX's
+// Bob Jenkins hash: the same look, different exact pixels.
+uniform float3 iResolution;
+uniform float iTime;
+uniform float uSpeed;
+uniform float uDistortion;
+uniform float uSeed;
+// Colors already converted to OKLab on the CPU (the original's preconverted path).
+uniform float3 uLabA;
+uniform float3 uLabB;
+uniform float3 uLabC;
+uniform float3 uLabD;
+
+float mxFade(float t) { return t * t * t * (t * (t * 6.0 - 15.0) + 10.0); }
+
+float hash3(float3 p) {
+    p = fract(p * float3(0.1031, 0.1030, 0.0973));
+    p += dot(p, p.yxz + 33.33);
+    return fract((p.x + p.y) * p.z);
+}
+
+// The 12-edge gradient pick of mxGradientFloat3, from a hash in [0, 1).
+float grad(float3 cell, float3 f) {
+    float h = floor(hash3(cell) * 16.0);
+    float u = h < 8.0 ? f.x : f.y;
+    float inner = (h == 12.0 || h == 14.0) ? f.x : f.z;
+    float v = h < 4.0 ? f.y : inner;
+    float uu = mod(h, 2.0) >= 1.0 ? -u : u;
+    float vv = mod(floor(h / 2.0), 2.0) >= 1.0 ? -v : v;
+    return uu + vv;
+}
+
+float perlin3(float3 p) {
+    float3 i = floor(p);
+    float3 f = p - i;
+    float u = mxFade(f.x);
+    float v = mxFade(f.y);
+    float w = mxFade(f.z);
+    float n000 = grad(i, f);
+    float n100 = grad(i + float3(1, 0, 0), f - float3(1, 0, 0));
+    float n010 = grad(i + float3(0, 1, 0), f - float3(0, 1, 0));
+    float n110 = grad(i + float3(1, 1, 0), f - float3(1, 1, 0));
+    float n001 = grad(i + float3(0, 0, 1), f - float3(0, 0, 1));
+    float n101 = grad(i + float3(1, 0, 1), f - float3(1, 0, 1));
+    float n011 = grad(i + float3(0, 1, 1), f - float3(0, 1, 1));
+    float n111 = grad(i + float3(1, 1, 1), f - float3(1, 1, 1));
+    float x00 = mix(n000, n100, u);
+    float x10 = mix(n010, n110, u);
+    float x01 = mix(n001, n101, u);
+    float x11 = mix(n011, n111, u);
+    return 0.982 * mix(mix(x00, x10, v), mix(x01, x11, v), w);
+}
+
+float4 chainedWarpStep(float2 pos, float scale, float z, float2 offA, float2 offB, float k, float strength) {
+    float3 wp = float3(pos * scale, z);
+    float nx = perlin3(wp + float3(offA, 0.0));
+    float ny = perlin3(wp + float3(offB, 0.0));
+    return float4(pos.x + nx * k * strength, pos.y + ny * k * strength, nx, ny);
+}
+
+float3 oklabToLinear(float3 lab) {
+    float l_ = lab.x + 0.3963377774 * lab.y + 0.2158037573 * lab.z;
+    float m_ = lab.x - 0.1055613458 * lab.y - 0.0638541728 * lab.z;
+    float s_ = lab.x - 0.0894841775 * lab.y - 1.2914855480 * lab.z;
+    float l = l_ * l_ * l_;
+    float m = m_ * m_ * m_;
+    float s = s_ * s_ * s_;
+    return float3(
+        4.0767416621 * l - 3.3077115913 * m + 0.2309699292 * s,
+        -1.2684380046 * l + 2.6097574011 * m - 0.3413193965 * s,
+        -0.0041960863 * l - 0.7034186147 * m + 1.7076147010 * s);
+}
+
+float3 linearToSrgb(float3 c) {
+    c = max(c, float3(0.0));
+    return mix(c * 12.92, pow(c, float3(0.41666)) * 1.055 - 0.055, step(float3(0.0031308), c));
+}
+
+half4 main(float2 coord) {
+    float2 uv = coord / iResolution.xy;
+    uv.y = 1.0 - uv.y;
+    float2 centred = uv - 0.5;
+    float aspect = iResolution.x / max(iResolution.y, 1e-6);
+    float t = iTime * uSpeed * 0.075;
+    float seed = uSeed * 0.17;
+    float strength = uDistortion;
+
+    float angle = perlin3(float3(centred.x * 0.8 + t * 0.4, centred.y * 0.8 - t * 0.25, seed)) * 12.566370614 * strength;
+    float2 sq = float2(centred.x, centred.y / aspect);
+    float2 spun = float2(sq.x * cos(angle) - sq.y * sin(angle), sq.x * sin(angle) + sq.y * cos(angle));
+    float2 rot = float2(spun.x, spun.y * aspect);
+
+    float shearX = rot.x + sin(rot.y * 5.0 + t * 2.0) / 50.0 * strength;
+    float shearY = rot.y + sin(shearX * 7.5 + t * 2.0) / 25.0 * strength;
+
+    float4 w1 = chainedWarpStep(float2(shearX, shearY), 2.0, t * 0.5 + seed, float2(5.2, 1.3), float2(1.7, 9.2), 0.25, strength);
+    float hardness = pow(clamp(w1.z * 0.5 + 0.5, 0.0, 1.0), 1.5);
+    float edge = mix(0.5, 0.008, hardness);
+    float tz = t * 0.3 + seed;
+    float4 w2 = chainedWarpStep(w1.xy, 1.5, tz, float2(8.3, 2.8), float2(3.1, 7.4), 0.2, strength);
+
+    float t1 = smoothstep(-edge, edge, perlin3(float3(w2.x * 1.8, w2.y * 1.8, tz)));
+    float t2 = smoothstep(-edge, edge, w1.w);
+
+    float3 lab = mix(mix(uLabA, uLabB, t1), mix(uLabC, uLabD, t1), t2);
+    float3 base = oklabToLinear(lab);
+
+    float fold = max(1.0 - abs(t1 * 2.0 - 1.0), 1.0 - abs(t2 * 2.0 - 1.0)) * hardness;
+    float surface = (w2.z * 0.5 + 0.5) * 0.12 + 0.94;
+    float3 lit = clamp(base * surface * (1.0 + fold * 0.35), 0.0, 1.0);
+    return half4(half3(linearToSrgb(lit)), 1.0);
+}

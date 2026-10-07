@@ -94,4 +94,4 @@ any more.
 - The demo video is made with [fframes](https://github.com/dmtrKovalenko/fframes),
   with background shaders ported from
   [Shader Effects](https://github.com/shader-effects-inc/shaders) (MIT). The
-  beat is original, synthesized for the video.
+  beat is original, synthesized for the video. Its source is in [`demo/`](demo).

@@ -1,0 +1,73 @@
+// Godrays, ported from Shader Effects Inc. (MIT,
+// github.com/shader-effects-inc/shaders, packages/core/src/shaders/Godrays).
+// Two layers of angular value-noise rays around a center, composited over a
+// transparent background. The uint bit-hash becomes a float hash.
+uniform float3 iResolution;
+uniform float iTime;
+uniform float2 uCenter;      // 0..1, y down like the original's prop
+uniform float4 uRayColor;    // linear rgb + alpha
+uniform float uDensity;
+uniform float uIntensity;
+uniform float uSpotty;
+uniform float uSpeed;
+uniform float uFade;         // overall opacity
+
+float hash12(float2 p) {
+    float3 p3 = fract(float3(p.xyx) * 0.1031);
+    p3 += dot(p3, p3.yzx + 33.33);
+    return fract((p3.x + p3.y) * p3.z);
+}
+
+float valueNoise(float2 st) {
+    float2 i = floor(st);
+    float2 f = fract(st);
+    float a = hash12(i);
+    float b = hash12(float2(i.x + 1.0, i.y));
+    float c = hash12(float2(i.x, i.y + 1.0));
+    float e = hash12(float2(i.x + 1.0, i.y + 1.0));
+    float2 u = f * f * (f * -2.0 + 3.0);
+    return mix(mix(a, b, u.x), mix(c, e, u.x), u.y);
+}
+
+float raysShape(float a, float aw, float blend, float r, float freq, float intensity) {
+    float nl = pow(valueNoise(float2(a * freq, r)), intensity);
+    float nr = pow(valueNoise(float2(aw * freq, r)), intensity);
+    return mix(nr, nl, blend);
+}
+
+float rayLayer(float4 fr, float t, float spots, float ic, float dens, float4 sched, float2 freqs) {
+    float rA = fr.w * sched.x - t * sched.y;
+    float rB = fr.w * sched.z * (1.0 + spots) - t * sched.w;
+    float f = dens * freqs.x;
+    return raysShape(fr.x, fr.y, fr.z, rA, f, ic) * raysShape(fr.x, fr.y, fr.z, rB, f * freqs.y, ic);
+}
+
+float3 linearToSrgb(float3 c) {
+    c = max(c, float3(0.0));
+    return mix(c * 12.92, pow(c, float3(0.41666)) * 1.055 - 0.055, step(float3(0.0031308), c));
+}
+
+half4 main(float2 coord) {
+    float2 uv = coord / iResolution.xy;
+    uv.y = 1.0 - uv.y;
+    float aspect = iResolution.x / max(iResolution.y, 1e-6);
+    float2 delta = uv - float2(uCenter.x, 1.0 - uCenter.y);
+    float2 s = float2(delta.x * aspect, delta.y);
+    float angle = atan(s.y, s.x);
+    float wrapped = angle - 6.283185307 * floor(angle / 6.283185307);
+    float blend = smoothstep(-0.15, 0.15, s.x);
+    float4 fr = float4(angle, wrapped, blend, length(s));
+
+    float t = iTime * uSpeed * 0.2;
+    float spots = 6.5 * abs(uSpotty);
+    float ic = 4.0 - 3.0 * clamp(uIntensity, 0.0, 1.0);
+    float dens = 6.0 * uDensity;
+    float l1 = rayLayer(fr, t, spots, ic, dens, float4(1.0, 3.0, 0.5, 2.0), float2(5.0, 4.0));
+    float l2 = rayLayer(fr, t, spots, ic, dens, float4(1.4, 2.5, 0.7, 1.8), float2(4.5, 3.5));
+    float coverage = clamp(l1 + l2 * 0.7, 0.0, 1.0);
+    // Softens toward the edges so the layer sits inside a frame.
+    coverage *= smoothstep(1.25, 0.05, length(s));
+
+    float a = coverage * uRayColor.a * uFade;
+    return half4(half3(linearToSrgb(uRayColor.rgb) * a), half(a));
+}

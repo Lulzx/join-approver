@@ -5,6 +5,10 @@
 A small desktop app (macOS and Windows) that approves a Telegram channel's
 pending join requests and proves that each one landed.
 
+[![Join Approver demo](docs/demo.webp)](docs/demo.mp4)
+
+*[Watch with sound](docs/demo.mp4) (26 s).*
+
 Sign in with the Telegram account that owns or administers the channel, pick
 the channel, press **Approve**. The app:
 
@@ -27,6 +31,17 @@ the channel, press **Approve**. The app:
 The login, the channel list, the counts and the profile pictures are cached
 in the app's data folder, so the window opens on the last known state at
 once. Signing out deletes all of it.
+
+## Screenshots
+
+| | |
+| --- | --- |
+| ![Sign in](docs/sign-in.png) Sign in with your Telegram account | ![Channel](docs/channel.png) Your channels, counts and who's waiting |
+| ![Search](docs/search.png) Search channels (⌘F / Ctrl+F) | ![Confirm](docs/confirm.png) One confirmation before anything happens |
+| ![Approving](docs/approving.png) Every approval confirmed, Telegram's pauses shown | ![Report](docs/report.png) The report: the subscriber count, explained |
+| ![Light mode](docs/channel-light.png) Light mode on macOS | ![Windows](docs/windows.png) On Windows |
+
+The screenshots and the demo use made-up channels and people.
 
 ## Building
 
@@ -76,3 +91,7 @@ any more.
   `Cargo.lock` pins rc0. Don't `cargo update` that one.
 - The builds aren't code-signed. macOS users open the app the first time with
   right-click → Open; Windows SmartScreen shows "More info → Run anyway".
+- The demo video is made with [fframes](https://github.com/dmtrKovalenko/fframes),
+  with background shaders ported from
+  [Shader Effects](https://github.com/shader-effects-inc/shaders) (MIT). The
+  beat is original, synthesized for the video.

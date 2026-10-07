@@ -17,7 +17,7 @@ import { existsSync, mkdirSync, readFileSync, rmSync, copyFileSync, writeFileSyn
 import { homedir } from "node:os";
 import { join } from "node:path";
 
-const REPO = "Lulzx/join-approver-releases";
+const REPO = "Lulzx/join-approver";
 const KEY = join(homedir(), ".tauri", "join-approver.key");
 const KEYCHAIN_ITEM = "join-approver-updater";
 const root = join(import.meta.dir, "..");
@@ -55,8 +55,8 @@ if (!dryRun) {
   if ((await $`gh auth status`.quiet().nothrow()).exitCode !== 0) die("gh isn't signed in (gh auth login)");
   if ((await $`gh release view ${tag} --repo ${REPO}`.quiet().nothrow()).exitCode === 0) die(`${tag} is already released`);
 }
-const isGit = existsSync(join(root, ".git"));
-if (isGit && !dryRun && (await $`git -C ${root} status --porcelain`.text()).trim()) {
+if (!existsSync(join(root, ".git"))) die("Not a git checkout");
+if (!dryRun && (await $`git -C ${root} status --porcelain`.text()).trim()) {
   die("Uncommitted changes: commit them first, so the release matches a commit");
 }
 
@@ -127,14 +127,15 @@ if (dryRun) {
 }
 
 // ---- publish ----
+// The bump is committed, tagged and pushed first, so the release is built
+// from exactly the commit its tag points at.
 if ((await $`gh repo view ${REPO}`.quiet().nothrow()).exitCode !== 0) {
   console.log(`Creating ${REPO}…`);
-  await $`gh repo create ${REPO} --public --add-readme --description ${"Installers and updates for Join Approver"}`.quiet();
+  await $`gh repo create ${REPO} --public --source ${root} --remote origin --description ${"Approve Telegram join requests, and prove each one landed"}`.quiet();
 }
+await $`git -C ${root} commit -qam ${`Release ${tag}`}`;
+await $`git -C ${root} tag ${tag}`;
+await $`git -C ${root} push -q origin HEAD ${tag}`;
 const body = `${notes}\n\n**Download:** macOS (Apple Silicon and Intel): \`${files.dmg[1]}\` · Windows: \`${files.winSetup[1]}\`\n\nInstalled copies update themselves.`;
-await $`gh release create ${tag} ${upload} --repo ${REPO} --title ${`Join Approver ${version}`} --notes ${body}`;
-if (isGit) {
-  await $`git -C ${root} commit -am ${`Release ${tag}`}`.quiet();
-  await $`git -C ${root} tag ${tag}`.quiet();
-}
+await $`gh release create ${tag} ${upload} --repo ${REPO} --verify-tag --title ${`Join Approver ${version}`} --notes ${body}`;
 console.log(`\n✓ Published ${tag}: https://github.com/${REPO}/releases/tag/${tag}`);

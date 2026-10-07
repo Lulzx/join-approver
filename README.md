@@ -1,5 +1,7 @@
 # Join Approver
 
+**Download:** [latest release](https://github.com/Lulzx/join-approver/releases/latest) (macOS `.dmg`, Windows `-setup.exe`). Installed copies update themselves.
+
 A small desktop app (macOS and Windows) that approves a Telegram channel's
 pending join requests and proves that each one landed.
 
@@ -52,6 +54,21 @@ PATH="$HOME/.cargo/bin:/opt/homebrew/opt/llvm/bin:/opt/homebrew/opt/lld/bin:$PAT
 ```
 
 Outputs land in `src-tauri/target/<target>/release/bundle/`.
+
+## Releasing
+
+```sh
+bun run release                       # patch: 0.1.0 -> 0.1.1
+bun run release minor --notes "..."   # or major, or an exact 1.2.3
+bun run release --dry-run             # build and stage only
+```
+
+Bumps the version, builds both platforms, signs the update bundles, commits
+and tags the bump, pushes, and publishes a GitHub release with
+`latest.json`, which installed copies poll. Needs the update key at
+`~/.tauri/join-approver.key` with its password in the Keychain as
+`join-approver-updater`; lose the key and installed copies can't be updated
+any more.
 
 ## Notes
 
